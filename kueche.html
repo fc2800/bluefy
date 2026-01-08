@@ -64,7 +64,9 @@ async function writeCmd() {
     }
 
     // Example payload – replace with the exact hex you use in BLE Scanner
-    const payload = new Uint8Array(["F6032001FF100101"]);
+    const payload = new Uint8Array([
+      0xf6, 0x03, 0x20, 0x01, 0xff, 0x10, 0x01, 0x01
+    ]);
 
     await writeChar.writeValue(payload);
     log("WRITE OK: " + payload[0].toString(16));
