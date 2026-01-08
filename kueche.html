@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gira JAL Bluefy Control</title>
+</head>
+<body>
+
+<button onclick="connect()">Connect to Gira JAL</button>
+<button onclick="writeCmd()">Write Command</button>
+
+<pre id="log"></pre>
+
+<script>
+const SERVICE_UUID = '9769f147-f77a-43ae-8c35-09f0c5245308';
+const CHAR_WRITE   = '97696341-f77a-43ae-8c35-09f0c5245308';
+const CHAR_NOTIFY  = '9769c769-f77a-43ae-8c35-09f0c5245308';
+
+let device, server, writeChar, notifyChar;
+
+function log(t) {
+  document.getElementById('log').textContent += t + "\n";
+}
+
+async function connect() {
+  try {
+    log("Requesting device...");
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'Jal' }],
+      optionalServices: [SERVICE_UUID]
+    });
+
+    log("Connecting...");
+    server = await device.gatt.connect();
+    log("CONNECTED");
+
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    writeChar  = await service.getCharacteristic(CHAR_WRITE);
+    notifyChar = await service.getCharacteristic(CHAR_NOTIFY);
+
+    log("Characteristics resolved");
+
+    // Optional: enable notifications
+    notifyChar.addEventListener(
+      'characteristicvaluechanged',
+      ev => {
+        const v = new Uint8Array(ev.target.value.buffer);
+        log("NOTIFY: " + [...v].map(x => x.toString(16).padStart(2,'0')).join(' '));
+      }
+    );
+    await notifyChar.startNotifications();
+    log("Notifications enabled");
+
+  } catch (e) {
+    log("ERROR: " + e);
+  }
+}
+
+async function writeCmd() {
+  try {
+    if (!writeChar) {
+      log("Not connected");
+      return;
+    }
+
+    // Example payload – replace with the exact hex you use in BLE Scanner
+    const payload = new Uint8Array([0x01]);
+
+    await writeChar.writeValue(payload);
+    log("WRITE OK: " + payload[0].toString(16));
+
+  } catch (e) {
+    log("WRITE ERROR: " + e);
+  }
+}
+</script>
+
+</body>
+</html>
