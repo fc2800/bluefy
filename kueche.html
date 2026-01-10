@@ -2,78 +2,365 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gira JAL Bluefy Control</title>
+  <title>Gira System 3000 - Bluefy Control</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 16px; }
+    h2 { margin: 18px 0 8px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin: 10px 0; }
+    label { font-size: 13px; color: #333; }
+    input, select, button { font-size: 14px; padding: 8px; }
+    input[type="number"] { width: 110px; }
+    input.hex { width: 280px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    pre { background: #0b0b0b; color: #e6e6e6; padding: 12px; border-radius: 10px; overflow: auto; }
+    button { border-radius: 8px; border: 1px solid #ccc; background: #f7f7f7; }
+    button.primary { background: #1f6feb; color: white; border-color: #1f6feb; }
+    button.danger { background: #d1242f; color: white; border-color: #d1242f; }
+    small.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
 </head>
 <body>
 
-<button onclick="connect()">Connect to Gira JAL</button>
-<button onclick="writeCmd()">Write Command</button>
+<h2>Connection</h2>
+<div class="card">
+  <div class="row">
+    <button class="primary" onclick="connect()">Connect</button>
+    <button class="danger" onclick="disconnect()">Disconnect</button>
+  </div>
 
+  <div style="margin-top:10px" class="row">
+    <label>Filter (namePrefix)</label>
+    <input id="namePrefix" value="Jal" />
+    <label>Service UUID</label>
+    <input id="svc" class="hex" value="9769f147-f77a-43ae-8c35-09f0c5245308" />
+  </div>
+
+  <div style="margin-top:10px" class="row">
+    <label>Write Char UUID</label>
+    <input id="charWrite" class="hex" value="97696341-f77a-43ae-8c35-09f0c5245308" />
+    <label>Notify Char UUID</label>
+    <input id="charNotify" class="hex" value="9769c769-f77a-43ae-8c35-09f0c5245308" />
+  </div>
+
+  <div style="margin-top:10px" class="row">
+    <small>Status:</small> <small id="status" class="mono">DISCONNECTED</small>
+  </div>
+</div>
+
+<h2>Addressing</h2>
+<div class="card">
+  <div class="row">
+    <label>Profile</label>
+    <select id="profile" onchange="applyProfileDefaults()">
+      <option value="shutter">Shutter (JAL)</option>
+      <option value="thermostat">Thermostat</option>
+    </select>
+
+    <label>Addr (3 bytes)</label>
+    <input id="addrA" type="text" value="03" size="2" class="hex">
+    <input id="addrB" type="text" value="20" size="2" class="hex">
+    <input id="addrC" type="text" value="01" size="2" class="hex">
+    <small class="mono">Example: Shutter = 03 20 01; Thermostat = 00 65 01</small>
+  </div>
+</div>
+
+<h2>Shutter Commands</h2>
+<div class="card">
+  <div class="row">
+    <button onclick="shutterUp()">Up</button>
+    <button onclick="shutterDown()">Down</button>
+    <button onclick="shutterStop()">Stop</button>
+    <button onclick="shutterStepUp()">Step Up</button>
+    <button onclick="shutterStepDown()">Step Down</button>
+  </div>
+
+  <div style="margin-top:10px" class="row">
+    <label>Set Position (%)</label>
+    <input id="posPct" type="number" min="0" max="100" value="50" />
+    <button onclick="shutterSetPosition()">Send</button>
+    <small class="mono">PROPERTY_ID_SET_POSITION = FC, value 0..100</small>
+  </div>
+</div>
+
+<h2>Thermostat Commands</h2>
+<div class="card">
+  <div class="row">
+    <label>Target (°C)</label>
+    <input id="targetC" type="number" step="0.5" value="22.0" />
+    <button onclick="thermoSetTarget()">Set target</button>
+    <button onclick="thermoHeatTo22()">Heat to 22.0°C</button>
+    <button onclick="thermoStopByLowSetpoint()">Stop (set low)</button>
+  </div>
+
+  <div style="margin-top:10px" class="row">
+    <label>Step (0.5°C)</label>
+    <button onclick="thermoStep(+0.5)">+0.5</button>
+    <button onclick="thermoStep(-0.5)">-0.5</button>
+    <small class="mono">Dial stepping implemented as FF absolute write unless FE step is verified.</small>
+  </div>
+
+  <div style="margin-top:10px" class="row">
+    <label>Low setpoint for stop (°C)</label>
+    <input id="lowC" type="number" step="0.5" value="8.0" />
+    <small class="mono">This is a deterministic “stop heating” fallback without discovering mode commands.</small>
+  </div>
+
+  <div style="margin-top:10px" class="row">
+    <label>Experimental: Send FD (mode/stop?)</label>
+    <input id="fdPayload" class="hex" value="00" />
+    <button onclick="thermoSendFD()">Send FD</button>
+    <small class="mono">Only use if you are actively verifying FD semantics.</small>
+  </div>
+</div>
+
+<h2>Raw Hex</h2>
+<div class="card">
+  <div class="row">
+    <label>Hex bytes</label>
+    <input id="rawHex" class="hex" value="f6 03 20 01 ff 10 01 01" />
+    <button onclick="sendRawHex()">Send raw</button>
+  </div>
+  <div style="margin-top:8px">
+    <small class="mono">Whitespace-separated hex bytes. Example: f6 03 20 01 ff 10 01 01</small>
+  </div>
+</div>
+
+<h2>Log</h2>
 <pre id="log"></pre>
 
 <script>
-const SERVICE_UUID = '9769f147-f77a-43ae-8c35-09f0c5245308';
-const CHAR_WRITE   = '97696341-f77a-43ae-8c35-09f0c5245308';
-const CHAR_NOTIFY  = '9769c769-f77a-43ae-8c35-09f0c5245308';
+let device = null;
+let server = null;
+let writeChar = null;
+let notifyChar = null;
 
-let device, server, writeChar, notifyChar;
+function setStatus(t) {
+  document.getElementById('status').textContent = t;
+}
 
 function log(t) {
-  document.getElementById('log').textContent += t + "\n";
+  const el = document.getElementById('log');
+  el.textContent += t + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+
+function hex2(n) {
+  return n.toString(16).padStart(2,'0');
+}
+
+function bytesToHex(arr) {
+  return [...arr].map(x => hex2(x)).join(' ');
+}
+
+function parseHexByte(s) {
+  const v = parseInt(s, 16);
+  if (Number.isNaN(v) || v < 0 || v > 255) throw new Error("Invalid hex byte: " + s);
+  return v;
+}
+
+function getAddr3() {
+  const a = parseHexByte(document.getElementById('addrA').value.trim());
+  const b = parseHexByte(document.getElementById('addrB').value.trim());
+  const c = parseHexByte(document.getElementById('addrC').value.trim());
+  return [a,b,c];
+}
+
+function buildFrame(frameType, addr3, propertyId, payloadBytes) {
+  // Common layout based on your working observations:
+  // [F6/F7] [addr0 addr1 addr2] [property] [10 01] [payload...]
+  return new Uint8Array([frameType, ...addr3, propertyId, 0x10, 0x01, ...payloadBytes]);
 }
 
 async function connect() {
   try {
-    log("Requesting device...");
+    if (!navigator.bluetooth) {
+      log("ERROR: Web Bluetooth not available in this browser.");
+      return;
+    }
+
+    const namePrefix = document.getElementById('namePrefix').value.trim();
+    const svc = document.getElementById('svc').value.trim();
+    const cW  = document.getElementById('charWrite').value.trim();
+    const cN  = document.getElementById('charNotify').value.trim();
+
+    log("Requesting device (namePrefix=" + namePrefix + ")...");
     device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: 'Jal' }],
-      optionalServices: [SERVICE_UUID]
+      filters: [{ namePrefix }],
+      optionalServices: [svc]
+    });
+
+    device.addEventListener('gattserverdisconnected', () => {
+      setStatus("DISCONNECTED");
+      log("DISCONNECTED");
+      server = null;
+      writeChar = null;
+      notifyChar = null;
     });
 
     log("Connecting...");
+    setStatus("CONNECTING");
     server = await device.gatt.connect();
+    setStatus("CONNECTED");
     log("CONNECTED");
 
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    writeChar  = await service.getCharacteristic(CHAR_WRITE);
-    notifyChar = await service.getCharacteristic(CHAR_NOTIFY);
-
+    const service = await server.getPrimaryService(svc);
+    writeChar  = await service.getCharacteristic(cW);
+    notifyChar = await service.getCharacteristic(cN);
     log("Characteristics resolved");
 
-    // Optional: enable notifications
-    notifyChar.addEventListener(
-      'characteristicvaluechanged',
-      ev => {
-        const v = new Uint8Array(ev.target.value.buffer);
-        log("NOTIFY: " + [...v].map(x => x.toString(16).padStart(2,'0')).join(' '));
-      }
-    );
+    notifyChar.addEventListener('characteristicvaluechanged', ev => {
+      const v = new Uint8Array(ev.target.value.buffer);
+      log("NOTIFY: " + bytesToHex(v));
+    });
+
     await notifyChar.startNotifications();
     log("Notifications enabled");
 
   } catch (e) {
-    log("ERROR: " + e);
+    setStatus("ERROR");
+    log("ERROR: " + (e && e.message ? e.message : e));
   }
 }
 
-async function writeCmd() {
+async function disconnect() {
   try {
-    if (!writeChar) {
-      log("Not connected");
-      return;
+    if (device && device.gatt && device.gatt.connected) {
+      log("Disconnecting...");
+      device.gatt.disconnect();
+    } else {
+      log("Already disconnected.");
     }
-
-    // Example payload – replace with the exact hex you use in BLE Scanner
-    const payload = new Uint8Array([
-      0xf6, 0x03, 0x20, 0x01, 0xff, 0x10, 0x01, 0x01
-    ]);
-
-    await writeChar.writeValue(payload);
-    log("WRITE OK: " + payload[0].toString(16));
-
   } catch (e) {
-    log("WRITE ERROR: " + e);
+    log("DISCONNECT ERROR: " + (e && e.message ? e.message : e));
   }
+}
+
+async function writeFrame(frame) {
+  if (!writeChar) {
+    log("Not connected");
+    return;
+  }
+  await writeChar.writeValue(frame);
+  log("WRITE: " + bytesToHex(frame));
+}
+
+/* --- Shutter profile commands --- */
+async function shutterUp() {
+  // PROPERTY_ID_MOVE = FF ; VALUE_UP = 00 (per your mapping)
+  const addr3 = getAddr3();
+  await writeFrame(buildFrame(0xF6, addr3, 0xFF, [0x00]));
+}
+
+async function shutterDown() {
+  // PROPERTY_ID_MOVE = FF ; VALUE_DOWN = 01
+  const addr3 = getAddr3();
+  await writeFrame(buildFrame(0xF6, addr3, 0xFF, [0x01]));
+}
+
+async function shutterStop() {
+  // PROPERTY_ID_STOP = FD ; VALUE_STOP = 00
+  const addr3 = getAddr3();
+  await writeFrame(buildFrame(0xF6, addr3, 0xFD, [0x00]));
+}
+
+async function shutterStepUp() {
+  // PROPERTY_ID_STEP = FE ; VALUE_UP = 00
+  const addr3 = getAddr3();
+  await writeFrame(buildFrame(0xF6, addr3, 0xFE, [0x00]));
+}
+
+async function shutterStepDown() {
+  // PROPERTY_ID_STEP = FE ; VALUE_DOWN = 01
+  const addr3 = getAddr3();
+  await writeFrame(buildFrame(0xF6, addr3, 0xFE, [0x01]));
+}
+
+async function shutterSetPosition() {
+  // PROPERTY_ID_SET_POSITION = FC ; payload = pct (0..100)
+  const addr3 = getAddr3();
+  const pct = Number(document.getElementById('posPct').value);
+  if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+    log("Invalid position percent (0..100)");
+    return;
+  }
+  await writeFrame(buildFrame(0xF6, addr3, 0xFC, [pct & 0xFF]));
+}
+
+/* --- Thermostat profile commands --- */
+function cToRawCenti(c) {
+  // Target temperature encoding as centi-degrees: raw = °C * 100
+  // This matches your example: 15.5°C -> 1550.
+  const raw = Math.round(c * 100);
+  if (raw < 0 || raw > 0xFFFF) throw new Error("Target °C out of range for raw uint16.");
+  // little-endian
+  return [raw & 0xFF, (raw >> 8) & 0xFF];
+}
+
+async function thermoSetTarget() {
+  const addr3 = getAddr3();
+  const c = Number(document.getElementById('targetC').value);
+  if (!Number.isFinite(c)) { log("Invalid targetC"); return; }
+  const rawLE = cToRawCenti(c);
+  // Thermostat uses FF for target setpoint in your frames.
+  await writeFrame(buildFrame(0xF6, addr3, 0xFF, rawLE));
+}
+
+async function thermoHeatTo22() {
+  document.getElementById('targetC').value = "22.0";
+  await thermoSetTarget();
+}
+
+async function thermoStopByLowSetpoint() {
+  const low = Number(document.getElementById('lowC').value);
+  if (!Number.isFinite(low)) { log("Invalid lowC"); return; }
+  document.getElementById('targetC').value = String(low);
+  await thermoSetTarget();
+}
+
+async function thermoStep(delta) {
+  // Conservative implementation: step is done by updating the target and writing FF.
+  // If later you verify an FE step command, you can change this.
+  const cur = Number(document.getElementById('targetC').value);
+  if (!Number.isFinite(cur)) { log("Invalid targetC"); return; }
+  const next = Math.round((cur + delta) * 2) / 2; // quantize to 0.5
+  document.getElementById('targetC').value = next.toFixed(1);
+  await thermoSetTarget();
+}
+
+async function thermoSendFD() {
+  const addr3 = getAddr3();
+  const hex = document.getElementById('fdPayload').value.trim();
+  if (!hex) { log("FD payload empty"); return; }
+  const parts = hex.split(/\s+/).filter(Boolean);
+  const payload = parts.map(parseHexByte);
+  await writeFrame(buildFrame(0xF6, addr3, 0xFD, payload));
+}
+
+/* --- Raw hex sender --- */
+async function sendRawHex() {
+  const raw = document.getElementById('rawHex').value.trim();
+  if (!raw) { log("Raw hex empty"); return; }
+  try {
+    const bytes = raw.split(/\s+/).filter(Boolean).map(parseHexByte);
+    await writeFrame(new Uint8Array(bytes));
+  } catch (e) {
+    log("Raw hex parse error: " + (e && e.message ? e.message : e));
+  }
+}
+
+/* --- Defaults --- */
+function applyProfileDefaults() {
+  const p = document.getElementById('profile').value;
+  if (p === 'shutter') {
+    document.getElementById('addrA').value = "03";
+    document.getElementById('addrB').value = "20";
+    document.getElementById('addrC').value = "01";
+  } else if (p === 'thermostat') {
+    document.getElementById('addrA').value = "00";
+    document.getElementById('addrB').value = "65";
+    document.getElementById('addrC').value = "01";
+  }
+  log("Profile defaults applied: " + p);
 }
 </script>
 
